@@ -5,105 +5,170 @@ dataset_2_path='D:\MapUp- Assessment 2\MapUp-DA-Assessment-2024\datasets\dataset
 dataset_1 = pd.read_csv(dataset_1_path)
 dataset_2 = pd.read_csv(dataset_2_path)
 
-def calculate_distance_matrix() -> pd.DataFrame:
-    """
-    Calculates a distance matrix based on the distance data from dataset_2,
-    excluding null values and using zero for missing distances.
-    """
-    # Pivoting dataset_2 to create a distance matrix
-    distance_matrix = dataset_2.pivot(index='id_start', columns='id_end', values='distance')
+## Question -9 
+def calculate_distance_matrix(dataset_2):
+    toll_ids = sorted(set(dataset_2['id_start']).union(set(dataset_2['id_end'])))
     
-    # Fill NaN values with 0
-    distance_matrix = distance_matrix.fillna(0)
-
+    #an empty distance matrix with zeros
+    distance_matrix = pd.DataFrame(0, index=toll_ids, columns=toll_ids, dtype=float)
+   
+    # distance matrix with the given distances
+    for _, row in dataset_2.iterrows():
+        distance_matrix.loc[row['id_start'], row['id_end']] = row['distance']
+        distance_matrix.loc[row['id_end'], row['id_start']] = row['distance']
+    
+    # Perform Floyd-Warshall algorithm for cumulative distances
+    n = len(toll_ids)
+    for k in toll_ids:
+        for i in toll_ids:
+            for j in toll_ids:
+                if distance_matrix.loc[i, j] == 0 and i != j:
+                    distance_matrix.loc[i, j] = np.inf  # Assign infinity where no direct route exists
+                distance_matrix.loc[i, j] = min(distance_matrix.loc[i, j], distance_matrix.loc[i, k] + distance_matrix.loc[k, j])
+    
+    # Ensure diagonal elements are 0 (distance from a toll to itself)
+    np.fill_diagonal(distance_matrix.values, 0)
+    
     return distance_matrix
 
-# Calculate and print the distance matrix
-distance_matrix = calculate_distance_matrix()
-print("Distance Matrix:")
-print(distance_matrix)
+#cumulative distance matrix
+cumulative_distance_matrix = calculate_distance_matrix(dataset_2)
+print(cumulative_distance_matrix)
 
-def unroll_distance_matrix() -> pd.DataFrame:
-#     """
-#     Unroll a distance matrix to a DataFrame in the style of the initial dataset.
+## Question - 10
+def unroll_distance_matrix(distance_matrix):
+    # Initialize an empty list
+    unrolled_data = []
 
-#     Args:
-#         df (pandas.DataFrame)
+    for i, id_start in enumerate(distance_matrix.index):
+        for j, id_end in enumerate(distance_matrix.columns):
+            if id_start != id_end:
+                distance = distance_matrix.iloc[i, j]  # Get the distance value
+                unrolled_data.append({'id_start': id_start, 'id_end': id_end, 'distance': distance})
 
-#     Returns:
-#         pandas.DataFrame: Unrolled DataFrame containing columns 'id_start', 'id_end', and 'distance'.
-#     """
-#     # Write your logic here
-    unrolled_df = dataset_2.copy()
+    # Convert the list into a DataFrame
+    unrolled_df = pd.DataFrame(unrolled_data)
 
-    # Return the unrolled DataFrame directly, since dataset_2 already has the desired format
     return unrolled_df
+unrolled_distance_matrix = unroll_distance_matrix(cumulative_distance_matrix)
 
-# Unroll the distance matrix
-unrolled_df = unroll_distance_matrix()  # No argument needed now
-
-print("Unrolled Distance DataFrame:")
-print(unrolled_df)
+print(unrolled_distance_matrix)
 
 
-def find_ids_within_ten_percentage_threshold(reference_id, reference_distance) -> pd.Series:
+
+# ## Question-11
+def find_ids_within_ten_percentage_threshold(dataset_2: pd.DataFrame, reference_id: int) -> pd.DataFrame:
     """
-    Finds IDs from dataset_2 that have distances within a 10% threshold of the reference distance
-    from a specified reference ID.
+    Find all IDs whose average distance lies within 10% of the average distance of the reference ID.
 
     Args:
-        reference_id (int): The ID to compare against.
-        reference_distance (float): The distance threshold to compare.
+        df (pandas.DataFrame): DataFrame containing distance data with columns ['id_start', 'id_end', 'distance'].
+        reference_id (int): The reference ID for comparison.
 
     Returns:
-        pd.Series: A series containing IDs that meet the criteria.
+        pandas.DataFrame: DataFrame with IDs whose average distance is within the specified percentage threshold
+                          of the reference ID's average distance.
     """
-    # Calculate the lower and upper bounds for the 10% threshold
-    lower_bound = reference_distance * 0.90
-    upper_bound = reference_distance * 1.10
+    # Calculate average distance for the reference ID
+    avg_reference_distance = dataset_2[dataset_2['id_start'] == reference_id]['distance'].mean()
+    
+    # Calculate the percentage threshold
+    lower_bound = avg_reference_distance * 0.90  # 10% below
+    upper_bound = avg_reference_distance * 1.10  # 10% above
 
-    # Filter dataset_2 for relevant distances
-    filtered_ids = dataset_2[
-        (dataset_2['id_start'] == reference_id) & 
-        (dataset_2['distance'] >= lower_bound) & 
-        (dataset_2['distance'] <= upper_bound)
-    ]['id_end']  # Assuming we want the corresponding end IDs
+    avg_distances = dataset_2.groupby('id_start')['distance'].mean().reset_index()
+    avg_distances = avg_distances[(avg_distances['distance'] >= lower_bound) & 
+                                   (avg_distances['distance'] <= upper_bound)]
+    
+    return avg_distances
+# Example
+reference_id = 1001400
+result = find_ids_within_ten_percentage_threshold(dataset_2, reference_id)
+print(f"IDs within 10% distance of ID {reference_id}:")
+print(result)
 
-    return filtered_ids.reset_index(drop=True)
+### Question-12
+ 
+def calculate_toll_rates_from_unrolled_df(unrolled_distance_matrix):
+    # Calculate toll rates for each vehicle type based on the distance
+    unrolled_distance_matrix['moto'] = unrolled_distance_matrix['distance'] * 0.8
+    unrolled_distance_matrix['car'] = unrolled_distance_matrix['distance'] * 1.2
+    unrolled_distance_matrix['rv'] = unrolled_distance_matrix['distance'] * 1.5
+    unrolled_distance_matrix['bus'] = unrolled_distance_matrix['distance'] * 2.2
+    unrolled_distance_matrix['truck'] = unrolled_distance_matrix['distance'] * 3.6
+    
+    return unrolled_distance_matrix
+toll_rates_df = calculate_toll_rates_from_unrolled_df(unrolled_distance_matrix)
 
-# Example usage
-reference_id = 1001400  # Example reference ID
-reference_distance = 5  # Example reference distance
+print(toll_rates_df)
 
-ids_within_threshold = find_ids_within_ten_percentage_threshold(reference_id, reference_distance)
-print("IDs within the 10% threshold:", ids_within_threshold)
+### Question -13 
+import datetime
 
+def calculate_time_based_toll_rates(toll_rates_df):
+    # Days of the week
+    weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+    weekends = ['Saturday', 'Sunday']
 
-# def calculate_toll_rate(df)->pd.DataFrame():
-#     """
-#     Calculate toll rates for each vehicle type based on the unrolled DataFrame.
+    # Time intervals for weekdays
+    weekday_intervals = [
+        (datetime.time(0, 0, 0), datetime.time(10, 0, 0), 0.8),
+        (datetime.time(10, 0, 0), datetime.time(18, 0, 0), 1.2),
+        (datetime.time(18, 0, 0), datetime.time(23, 59, 59), 0.8)
+    ]
+    # Time intervals for weekends (constant factor 0.7)
+    weekend_interval = [(datetime.time(0, 0, 0), datetime.time(23, 59, 59), 0.7)]
+    # Create a list to store rows before concatenating them into a DataFrame
+    result_rows = []
+    
+    for idx, row in toll_rates_df.iterrows():
+        id_start = row['id_start']
+        id_end = row['id_end']
 
-#     Args:
-#         df (pandas.DataFrame)
+        base_rates = row[['moto', 'car', 'rv', 'bus', 'truck']]
 
-#     Returns:
-#         pandas.DataFrame
-#     """
-#     # Wrie your logic here
+        for day in weekdays:
+            for start_time, end_time, discount in weekday_intervals:
+                # Calculate new toll rates based on the discount factor
+                modified_rates = base_rates * discount
+                new_row = {
+                    'id_start': id_start,
+                    'id_end': id_end,
+                    'start_day': day,
+                    'start_time': start_time,
+                    'end_day': day,
+                    'end_time': end_time,
+                    'moto': modified_rates['moto'],
+                    'car': modified_rates['car'],
+                    'rv': modified_rates['rv'],
+                    'bus': modified_rates['bus'],
+                    'truck': modified_rates['truck']
+                }
+                # Append the new row to the result list
+                result_rows.append(new_row)
 
-#     return df
+        # Generate entries for weekends
+        for day in weekends:
+            for start_time, end_time, discount in weekend_interval:
+                # Calculate new toll rates based on the weekend discount factor
+                modified_rates = base_rates * discount
+                new_row = {
+                    'id_start': id_start,
+                    'id_end': id_end,
+                    'start_day': day,
+                    'start_time': start_time,
+                    'end_day': day,
+                    'end_time': end_time,
+                    'moto': modified_rates['moto'],
+                    'car': modified_rates['car'],
+                    'rv': modified_rates['rv'],
+                    'bus': modified_rates['bus'],
+                    'truck': modified_rates['truck']
+                }
+                # Append the new row to the result list
+                result_rows.append(new_row)
 
-
-# def calculate_time_based_toll_rates(df)->pd.DataFrame():
-#     """
-#     Calculate time-based toll rates for different time intervals within a day.
-
-#     Args:
-#         df (pandas.DataFrame)
-
-#     Returns:
-#         pandas.DataFrame
-#     """
-#     # Write your logic here
-
-#     return df
+    # Convert the result list to a DataFrame using (pd.dataframe)
+    result_df = pd.DataFrame(result_rows)
+    return result_df
+print(calculate_time_based_toll_rates(toll_rates_df))

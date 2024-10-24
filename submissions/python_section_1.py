@@ -1,8 +1,8 @@
 from typing import Dict, List
-
 import pandas as pd
-
-
+import numpy as np
+from datetime import datetime
+### Question - 1 
 def reverse_by_n_elements(lst: List[int], n: int) -> List[int]:
     """
     Reverses the input list by groups of n elements.
@@ -12,7 +12,7 @@ def reverse_by_n_elements(lst: List[int], n: int) -> List[int]:
         result.extend(lst[i:i + n][::-1])
     return result
 
-
+### Question - 2 
 def group_by_length(lst: List[str]) -> Dict[int, List[str]]:
     """
     Groups the strings by their length and returns a dictionary.
@@ -25,6 +25,8 @@ def group_by_length(lst: List[str]) -> Dict[int, List[str]]:
             result[key] = []
         result[key].append(s)
     return result
+
+## Question- 3
 
 def flatten_dict(nested_dict: Dict, sep: str = '.') -> Dict:
     """
@@ -46,6 +48,8 @@ def flatten_dict(nested_dict: Dict, sep: str = '.') -> Dict:
     
     return recurse(nested_dict)
 
+## Question - 4
+
 import itertools
 def unique_permutations(nums: List[int]) -> List[List[int]]:
     """
@@ -57,6 +61,7 @@ def unique_permutations(nums: List[int]) -> List[List[int]]:
     # Your code here
     return list(map(list, set(itertools.permutations(nums))))
 
+## Question - 5
 import re
 def find_all_dates(text: str) -> List[str]:
     """
@@ -81,7 +86,7 @@ def find_all_dates(text: str) -> List[str]:
     
     return dates
 
-
+### Questions- 6
 from geopy.distance import geodesic
 
 def decode_polyline(polyline_str):
@@ -119,7 +124,7 @@ def polyline_to_dataframe(polyline_str: str) -> pd.DataFrame:
     
     return df
 
-
+### Question-7
 def rotate_and_multiply_matrix(matrix: List[List[int]]) -> List[List[int]]:
     """
     Rotate the given matrix by 90 degrees clockwise, then multiply each element 
@@ -144,21 +149,57 @@ def rotate_and_multiply_matrix(matrix: List[List[int]]) -> List[List[int]]:
     
     return result_matrix
 
+## Question- 8
+
+def verify_completeness_of_timestamps(df: pd.DataFrame) -> pd.Series:
+
+    def time_to_seconds(time_str):
+        t = datetime.strptime(time_str, "%H:%M:%S").time()
+        return t.hour * 3600 + t.minute * 60 + t.second
+    df.set_index(['id', 'id_2'], inplace=True)
+    
+    # Convert days of the week into numerical values (assuming Monday=0 and Sunday=6)
+    day_mapping = {'Monday': 0, 'Tuesday': 1, 'Wednesday': 2, 'Thursday': 3, 
+                   'Friday': 4, 'Saturday': 5, 'Sunday': 6}
+    df['startDay'] = df['startDay'].map(day_mapping)
+    df['endDay'] = df['endDay'].map(day_mapping)
+    
+    # Convert times to seconds from 00:00:00
+    df['startTime'] = df['startTime'].apply(time_to_seconds)
+    df['endTime'] = df['endTime'].apply(time_to_seconds)
+    
+    incomplete_series = pd.Series(False, index=df.index.unique())
+
+    # Iterate through each (id, id_2) group
+    for (id_val, id_2_val), group in df.groupby(level=['id', 'id_2']):
+        week_coverage = {day: np.zeros(24 * 3600, dtype=bool) for day in range(7)}  # 24 hours, 3600 seconds per hour
+        
+        for _, row in group.iterrows():
+            start_day, end_day = row['startDay'], row['endDay']
+            start_time, end_time = row['startTime'], row['endTime']
+            
+            if start_day == end_day:
+                # If the start and end are on the same day, just mark that time
+                week_coverage[start_day][start_time:end_time+1] = True
+            else:
+                # If it spans multiple days, mark from start to end of the first day
+                week_coverage[start_day][start_time:] = True
+                # Mark full days in between
+                for day in range(start_day + 1, end_day):
+                    week_coverage[day][:] = True
+                # Mark from start to end time on the last day
+                week_coverage[end_day][:end_time+1] = True
+        
+        # Check if all days of the week are fully covered (from 00:00:00 to 23:59:59)
+        for day in range(7):
+            if not np.all(week_coverage[day]):
+                incomplete_series.loc[(id_val, id_2_val)] = True
+                break
+    
+    return incomplete_series
+
 dataset_1_path = 'D:\MapUp- Assessment 2\MapUp-DA-Assessment-2024\datasets\dataset-1.csv'
 dataset_1 = pd.read_csv(dataset_1_path)
-def time_check(dataset_1) -> pd.Series:
-    """
-    Use shared dataset-2 to verify the completeness of the data by checking whether the timestamps for each unique (`id`, `id_2`) pair cover a full 24-hour and 7 days period
+result = verify_completeness_of_timestamps(dataset_1)
+print(result)
 
-    Args:
-        df (pandas.DataFrame)
-
-    Returns:
-        pd.Series: return a boolean series
-    """
-    dataset_1['timestamp'] = pd.to_datetime(dataset_1['timestamp'])
-    
-    # Check if each unique (`id`, `id_2`) has a full 7-day period and 24-hour coverage
-    result = dataset_1.groupby(['id', 'id_2']).apply(lambda group: group['timestamp'].dt.date.nunique() == 7 and group['timestamp'].dt.hour.nunique() == 24)
-    
-    return result
